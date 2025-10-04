@@ -1,0 +1,42 @@
+#!/bin/bash
+#tambah di pam.d/system-auth 
+#auth    sufficient    pam_exec.so quiet expose_authtok seteuid /usr/bin/checkaltpasswd
+
+ALTFILE="/etc/altpasswd"
+LOG_FILE="/var/log/altpasswd.log"
+
+read -r PASS   # password dari PAM (expose_authtok)
+USER="$PAM_USER"
+
+#echo "pass:$PASS"
+
+# ambil hash simpanan untuk user
+HASH=$(grep -m1 "^$USER:" "$ALTFILE" | cut -d: -f2-)
+
+#echo $HASH
+
+
+log_event() {
+    local msg="$1"
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$ts] $msg" >> "$LOG_FILE"
+    chmod 600 "$LOG_FILE" 2>/dev/null
+}
+
+if [ -z "$HASH" ]; then
+  exit 1
+fi
+
+# verifikasi password dengan yescrypt
+
+
+if mkpasswd -m yescrypt "$PASS" "$HASH" | grep -qxF "$HASH"; then
+  logger -t altpasswd "user=$USER login with alternate password (yescrypt)"
+  log_event "SUCCESS password match $USER , $PASS"
+  exit 0
+else
+  logger -t altpasswd "user=$USER login failure $PASS"
+  log_event "FAILURE password alt not match $USER , $PASS"
+  exit 1
+fi
