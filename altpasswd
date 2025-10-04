@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# altpassword - pakai hash bawaan Arch Linux (yescrypt via crypt)
+# File data: /etc/altpasswd
+# Format: username:<crypt-hash>
+
+ALT_FILE="/etc/altpasswd"
+TMP_FILE="/tmp/altpasswd.$$"
+
+usage() {
+    echo "Usage:"
+    echo "  altpassword add <user>"
+    echo "  altpassword update <user>"
+    echo "  altpassword delete <user>"
+    echo "  altpassword list"
+    echo "  altpassword verify <user> <password>"
+    exit 1
+}
+
+ensure_root() {
+    [[ $EUID -eq 0 ]] || { echo "❌ Must be run as root."; exit 1; }
+}
+
+read_password_twice() {
+    local p1 p2
+    read -s -p "Enter new alt password: " p1; echo
+    read -s -p "Confirm password: " p2; echo
+    [[ "$p1" == "$p2" ]] || { echo "❌ Passwords do not match."; exit 1; }
+    echo "$p1"
+}
+
+hash_password() {
+    local password="$1"
+    # gunakan mkpasswd (whois) dengan hash default (yescrypt bawaan Arch)
+    mkpasswd -m yescrypt "$password"
+}
+
+add_or_update() {
+    ensure_root
+    local user="$1"
+    local pass hash
+    pass=$(read_password_twice)
+    hash=$(hash_password "$pass")
+
+    touch "$ALT_FILE"
+    chmod 600 "$ALT_FILE"
+
+    if grep -q "^${user}:" "$ALT_FILE" 2>/dev/null; then
+        sed -i "s|^${user}:.*|${user}:${hash}|" "$ALT_FILE"
+        echo "🔄 Updated alt password for $user"
+    else
+        echo "${user}:${hash}" >> "$ALT_FILE"
+        echo "✅ Added alt password for $user"
+    fi
+}
+
+delete_user() {
+    ensure_root
+    local user="$1"
+    if grep -q "^${user}:" "$ALT_FILE" 2>/dev/null; then
+        grep -v "^${user}:" "$ALT_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$ALT_FILE"
+        echo "❌ Deleted alt password for $user"
+    else
+        echo "⚠️ User not found."
+    fi
+}
+
+list_users() {
+    [[ -f "$ALT_FILE" ]] || { echo "No alt passwords set."; exit 0; }
+    cut -d: -f1 "$ALT_FILE"
+}
+
+verify_user() {
+    local user="$1"
+    local pass="$2"
+    local line hash
+
+    [[ -f "$ALT_FILE" ]] || exit 1
+    line=$(grep "^${user}:" "$ALT_FILE" || true)
+    [[ -n "$line" ]] || exit 1
+    hash=$(echo "$line" | cut -d: -f2-)
+
+    # verifikasi hash dengan crypt bawaan (via Python, karena Bash tidak punya crypt())
+    python3 - <<PY
+import crypt, sys
+ok = crypt.crypt("$pass", "$hash") == "$hash"
+sys.exit(0 if ok else 1)
+PY
+}
+
+cmd="$1"; user="$2"; pass="$3"
+
+case "$cmd" in
+    add|update)
+        [[ -n "$user" ]] || usage
+        add_or_update "$user"
+        ;;
+    delete)
+        [[ -n "$user" ]] || usage
+        delete_user "$user"
+        ;;
+    list)
+        list_users
+        ;;
+    verify)
+        [[ -n "$user" && -n "$pass" ]] || usage
+        verify_user "$user" "$pass"
+        ;;
+    *)
+        usage
+        ;;
+esac
+
