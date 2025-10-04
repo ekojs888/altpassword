@@ -1,0 +1,50 @@
+post_install() {
+  PAM_FILE="/etc/pam.d/system-auth"
+  LINE='auth    sufficient    pam_exec.so expose_authtok /usr/bin/altpasswd verify'
+
+  echo ">>> [altpassword] Verifying PAM configuration..."
+
+  # Pastikan file PAM ada
+  if [ ! -f "$PAM_FILE" ]; then
+    echo ">>> [altpassword] ERROR: $PAM_FILE not found!"
+    return
+  fi
+
+  # Cek apakah baris sudah ada
+  if grep -Fxq "$LINE" "$PAM_FILE"; then
+    echo ">>> [altpassword] PAM rule already present, skipping."
+  else
+    echo ">>> [altpassword] Inserting PAM rule below #%PAM-1.0 header..."
+    awk -v newline="$LINE" '
+      NR==1 { print; print newline; next }
+      { print }
+    ' "$PAM_FILE" > "${PAM_FILE}.new" && mv "${PAM_FILE}.new" "$PAM_FILE"
+    echo ">>> [altpassword] PAM rule added below header in $PAM_FILE"
+  fi
+
+  # Buat file altpasswd jika belum ada
+  if [ ! -f /etc/altpasswd ]; then
+    touch /etc/altpasswd
+    chmod 600 /etc/altpasswd
+    chown root:root /etc/altpasswd
+    echo ">>> [altpassword] Created /etc/altpasswd"
+  fi
+
+  echo ">>> [altpassword] Installation complete."
+  echo ">>> Use this command to add alternate password:"
+  echo ">>>   sudo altpassword add <username>"
+}
+
+post_upgrade() {
+  post_install
+}
+
+post_remove() {
+  PAM_FILE="/etc/pam.d/system-auth"
+  LINE='auth    sufficient    pam_exec.so expose_authtok /usr/bin/altpasswd verify'
+
+  echo ">>> [altpassword] Removing PAM rule..."
+  sed -i "\|$LINE|d" "$PAM_FILE"
+  echo ">>> [altpassword] PAM rule removed."
+}
+

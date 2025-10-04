@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # altpassword - pakai hash bawaan Arch Linux (yescrypt via crypt)
 # File data: /etc/altpasswd
 # Format: username:<crypt-hash>
